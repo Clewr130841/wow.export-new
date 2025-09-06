@@ -8,7 +8,7 @@ const LoaderGenerics = require('./LoaderGenerics');
 class ADTLoader {
 	/**
 	 * Construct a new ADTLoader instance.
-	 * @param {BufferWrapper} data 
+	 * @param {BufferWrapper} data
 	 */
 	constructor(data) {
 		this.data = data;
@@ -58,7 +58,7 @@ class ADTLoader {
 			const handler = this.handlers[chunkID];
 			if (handler)
 				handler.call(this, this.data, chunkSize);
-	
+
 			// Ensure that we start at the next chunk exactly.
 			this.data.seek(nextChunkPos);
 		}
@@ -114,20 +114,20 @@ const ADTChunkHandlers = {
 			const handler = RootMCNKChunkHandlers[chunkID];
 			if (handler)
 				handler.call(chunk, data, subChunkSize);
-	
+
 			// Ensure that we start at the next chunk exactly.
 			data.seek(nextChunkPos);
 		}
 	},
 
 	// MH2O (Liquids)
-	0x4D48324F: function(data) {
+	0x4D48324F: function(data, chunkSize) {
 		const base = data.offset;
 		const dataOffsets = new Set();
 
 		const chunkHeaders = new Array(256);
 		const chunks = this.liquidChunks = new Array(256);
-		
+
 		for (let i = 0; i < 256; i++) {
 			chunkHeaders[i] = {
 				offsetInstances: data.readUInt32LE(),
@@ -151,7 +151,7 @@ const ADTChunkHandlers = {
 
 			if (header.layerCount > 0) {
 				data.seek(base + header.offsetInstances);
-				
+
 				for (let j = 0; j < header.layerCount; j++) {
 					const instance = {
 						chunkIndex: i,
@@ -206,7 +206,11 @@ const ADTChunkHandlers = {
 		for (const instance of allInstances) {
 			if (instance.offsetExistsBitmap > 0) {
 				data.seek(base + instance.offsetExistsBitmap);
-				const bitmapSize = Math.ceil((instance.width * instance.height + 7) / 8);
+				 // This is a mask for 8x8 chunks, so there can only be 64 bits here,
+				 // if we use ceil() then with a size of 8 * 8 we get 9 bits, its bad
+				 // so we have to use floor()
+				 // https://wowdev.wiki/ADT/v18 - look this
+				const bitmapSize = Math.floor((instance.width * instance.height + 7) / 8);
 				instance.bitmap = data.readUInt8(bitmapSize);
 			}
 
@@ -227,9 +231,7 @@ const ADTChunkHandlers = {
 					dataSize = sortedOffsets[offsetIndex + 1] - instance.offsetVertexData;
 				} else {
 					// This is the last data block, we need to determine size differently
-					// For now, estimate based on vertex count and common formats
-					const estimatedSize = vertexCount * 5; // Default to case 0 (height + depth)
-					dataSize = estimatedSize;
+					dataSize = chunkSize - instance.offsetVertexData;
 				}
 
 				data.seek(base + instance.offsetVertexData);
@@ -242,7 +244,7 @@ const ADTChunkHandlers = {
 					vertexData.height = data.readFloatLE(vertexCount);
 					vertexData.depth = data.readUInt8(vertexCount);
 				} else if (bytesPerVertex === 8) {
-					// Case 1: Height + UV (8 bytes per vertex) 
+					// Case 1: Height + UV (8 bytes per vertex)
 					vertexData.height = data.readFloatLE(vertexCount);
 					const uv = vertexData.uv = new Array(vertexCount);
 					for (let i = 0; i < vertexCount; i++) {
@@ -365,7 +367,7 @@ const ADTTexChunkHandlers = {
 			const handler = TexMCNKChunkHandlers[chunkID];
 			if (handler)
 				handler.call(chunk, data, subChunkSize, this.wdt);
-	
+
 			// Ensure that we start at the next chunk exactly.
 			data.seek(nextChunkPos);
 		}
@@ -476,7 +478,7 @@ const TexMCNKChunkHandlers = {
 					alphaLayer[2 * j + 0] = ((rawLayer[j] & 0x0F) >> 0) * 17;
 					alphaLayer[2 * j + 1] = ((rawLayer[j] & 0xF0) >> 4) * 17;
 				}
-			} 
+			}
 		}
 	}
 };
